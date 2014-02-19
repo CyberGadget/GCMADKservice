@@ -30,7 +30,7 @@ public class GCMADKservice extends Service {
 
 	private static final String TAG = "GCMADKservice";
 	private PendingIntent mPermissionIntent;
-	private static final String ACTION_USB_PERMISSION = "edu.rosehulman.armscripts.action.USB_PERMISSION";
+	private static final String ACTION_USB_PERMISSION = "edu.rosehulman.gcmadkservice.action.USB_PERMISSION";
 	private boolean mPermissionRequestPending;
 	private UsbManager mUsbManager;
 	private UsbAccessory mAccessory;
@@ -41,7 +41,8 @@ public class GCMADKservice extends Service {
 	public static GCMADKservice mService = null;
 
 	/** GAE Project Number */
-	String SENDER_ID = "25263590245"; // for kahlda-gcm-tutorial
+	String SENDER_ID = "458090634212"; // for davelldf-robot-controll
+	// String SENDER_ID = "25263590245"; // for kahlda-gcm-tutorial
 
 	GoogleCloudMessaging mGcmHelper;
 
