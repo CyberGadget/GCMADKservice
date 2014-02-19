@@ -26,7 +26,10 @@ import android.util.Log;
 
 import com.google.android.gms.gcm.GoogleCloudMessaging;
 
-public class GCMADKservice extends Service {
+import edu.rosehulman.me435.FieldOrientation;
+import edu.rosehulman.me435.FieldOrientationListener;
+
+public class GCMADKservice extends Service implements FieldOrientationListener {
 
 	private static final String TAG = "GCMADKservice";
 	private PendingIntent mPermissionIntent;
@@ -39,6 +42,16 @@ public class GCMADKservice extends Service {
 	private FileOutputStream mOutputStream;
 
 	public static GCMADKservice mService = null;
+	
+	private static final double ANGLE_THRESHOLD = 5.0;
+
+	private FieldOrientation mFieldOrientation;
+
+	private double mTargetAngle;
+
+	private boolean mIsRotating;
+
+	private Script mScript;
 
 	/** GAE Project Number */
 	String SENDER_ID = "458090634212"; // for davelldf-robot-controll
@@ -76,19 +89,6 @@ public class GCMADKservice extends Service {
 		}
 	};
 
-	/**
-	 * Override this method with your activity if you'd like to receive
-	 * messages.
-	 * 
-	 * @param receivedCommand
-	 */
-	protected void onCommandReceived(final String receivedCommand) {
-		// Toast.makeText(this, "Received command = " + receivedCommand,
-		// Toast.LENGTH_SHORT).show();
-		Log.d(TAG, "Received command = " + receivedCommand);
-		sendCommand("ECHO: " + receivedCommand + '\0');
-	}
-
 	@Override
 	public void onCreate() {
 		super.onCreate();
@@ -108,6 +108,11 @@ public class GCMADKservice extends Service {
 		} else {
 			Log.d(TAG, "Alread have a reg id = " + getRegistrationId());
 		}
+		
+		mScript = new Script();
+		mIsRotating = false;
+		mFieldOrientation = new FieldOrientation(this);
+		mFieldOrientation.registerListener(this);
 	}
 
 	private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
@@ -197,6 +202,7 @@ public class GCMADKservice extends Service {
 	public void onDestroy() {
 		super.onDestroy();
 		mService = null;
+		mFieldOrientation.unregisterListener();
 		Log.d(TAG, "Service is being destroyed. Oh no.");
 		closeAccessory();
 		unregisterReceiver(mUsbReceiver);
@@ -261,25 +267,54 @@ public class GCMADKservice extends Service {
 	// ----------------------
 	public void receivedGcmJson(JSONObject jsonObj) {
 		String simpleString = "No simple string found";
-		int intValue = 0;
-		double floatValue = 0.0;
 		try {
 			simpleString = jsonObj.getString("simple_string");
-			if (jsonObj.has("int_value")) {
-				intValue = jsonObj.getInt("int_value");
-			}
-			if (jsonObj.has("float_value")) {
-				floatValue = jsonObj.getDouble("float_value");
-			}
 		} catch (JSONException e) {
 			e.printStackTrace();
 		}
 		Log.d(TAG, "simple_string: " + simpleString);
-		Log.d(TAG, "int_value: " + intValue);
-		Log.d(TAG, "float_value: " + floatValue);
 
-		sendCommand(simpleString + '\0');
-		Log.d(TAG, "Should have sent command.");
+		if (simpleString.length() > 0) {
+			mScript.clearScript();
+			mIsRotating = false;
+			executeCommand(simpleString);
+		}
+	}
+	
+	private void executeCommand(String command) {
+		if (command != null) {
+			if (command.charAt(0) != '$') {
+				sendCommand(command);
+				//mDisplay.append(command + "\n");
+				Log.d(TAG, "DISP: " + command);
+			} else {
+				String[] parsedCommand = command.substring(1).split(" ");
+				if (parsedCommand[0].equalsIgnoreCase("ROTATE")) {
+					// TODO: Send to server the script change
+					rotate(Integer.parseInt(parsedCommand[1]));
+				} else if (parsedCommand[0].equalsIgnoreCase("SCRIPT")) {
+					// TODO: Send to server the script change
+					mScript.startScript(parsedCommand[1]);
+					//mDisplay.append("Script set to: " + mScript.getScriptName() + "\n");
+					Log.d(TAG, "DISP: Script set to: " + mScript.getScriptName());
+					executeCommand(mScript.nextCommand());
+				}
+
+			}
+		}
+	}
+
+	private void rotate(double angle) {
+		mTargetAngle = angle;
+		if (mTargetAngle > 0) {
+			sendCommand("ROTATE_CW 255");
+		} else if (mTargetAngle < 0) {
+			sendCommand("ROTATE_CCW 255");
+		}
+		//mDisplay.append(String.format("Rotating Clockwise for %d degrees.\n", (int) mTargetAngle));
+		Log.d(TAG, "DISP: " + String.format("Rotating Clockwise for %d degrees.", (int) mTargetAngle));
+		mFieldOrientation.setCurrentFieldHeading(0);
+		mIsRotating = true;
 	}
 
 	// ---------------------- SharedPreferences to store the registration id
@@ -301,5 +336,35 @@ public class GCMADKservice extends Service {
 		return PreferenceManager.getDefaultSharedPreferences(this);
 		// return getSharedPreferences(MainActivity.class.getSimpleName(),
 		// Context.MODE_PRIVATE);
+	}
+
+	protected void onCommandReceived(String receivedCommand) {
+		Log.d(TAG, "Arduino Command Received: " + receivedCommand);
+		if (receivedCommand.equalsIgnoreCase("SENSOR_STOP")) {
+			Log.d(TAG, "Executing next command after sensor stop.");
+			//mDisplay.append("Arduino sensor stop. Next step in script.\n");
+			Log.d(TAG, "DISP: Arduino sensor stop. Next step in script.");
+			executeCommand(mScript.nextCommand());
+		} else if (receivedCommand.equalsIgnoreCase("SENSOR_REJECT")) {
+			Log.d(TAG,
+					"Arduino has rejected moving forward with script. Aborting script.");
+			//mDisplay.append("Arduino sensor reject. Aborting script.\n");
+			Log.d(TAG, "DISP: Arduino sensor reject. Aborting Script.");
+			mScript.clearScript();
+		}
+	}
+
+	@Override
+	public void onSensorChanged(double fieldHeading, float[] orientationValues) {
+
+		if (mIsRotating
+				&& Math.abs(-fieldHeading - mTargetAngle) < ANGLE_THRESHOLD) {
+			sendCommand("STOP");
+			//mDisplay.append("Done Rotating, Ergo, Stopping.\n");
+			Log.d(TAG, "DISP: Done Rotating, Ergo, Stopping.");
+			mIsRotating = false;
+			Log.d(TAG, "Executing next command after rotation.");
+			executeCommand(mScript.nextCommand());
+		}
 	}
 }

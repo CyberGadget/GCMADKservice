@@ -2,6 +2,6 @@
 <resources>
     <usb-accessory
         manufacturer="Rose-Hulman"
-        model="AccessoryService"
+        model="GCMADKService"
         version="1.0" />
 </resources>

@@ -43,7 +43,7 @@ public class GcmBroadcastReceiver extends BroadcastReceiver {
 		GoogleCloudMessaging gcm = GoogleCloudMessaging.getInstance(context);
 		String messageType = gcm.getMessageType(intent);
 		Log.d("GCM", "Message type:" + messageType);
-
+		
 		if (!extras.isEmpty()) { // has effect of unparcelling Bundle
 			if (GoogleCloudMessaging.MESSAGE_TYPE_SEND_ERROR.equals(messageType)) {
 				//Toast.makeText(MainActivity.mMainActivity, "Error: " + extras.toString(), Toast.LENGTH_SHORT).show();
@@ -59,6 +59,8 @@ public class GcmBroadcastReceiver extends BroadcastReceiver {
 //					Log.d("GCM", "float_value: " + jsonObj.getDouble("float_value"));
 				} catch (JSONException e) {
 					e.printStackTrace();
+				} catch (NullPointerException e) {
+					Log.d("GCM", "GCMADKservice tried to receive GCM, but was null.");
 				}
 			}
 		}
